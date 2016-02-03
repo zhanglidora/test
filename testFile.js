@@ -1,192 +1,394 @@
+Skip to content
+This repository  
+Search
+Pull requests
+Issues
+Gist
+ @zhanglidora
+ Watch 1,887
+  Star 26,733
+ Fork 4,784 facebook/react-native
+ Code  Issues 888  Pull requests 176  Wiki  Pulse  Graphs
+Branch: master Find file Copy pathreact-native/Examples/Movies/SearchScreen.js
+8fb9cc8  on Oct 16, 2015
+@billglover billglover Fix 16 linter warnings in Examples/
+15 contributors @vjeux @tadeuzagallo @gabelevi @nicklockwood @mkonicek @ide @christopherdro @sahrens @changgengli @brentvatne @billglover @bhosmer @spicyj @andreicoman11 @amasad
+RawBlameHistory     377 lines (336 sloc)  9.8 KB
 /**
- * @provideModule DocumentCreationStore
+ * The examples provided by Facebook are for non-commercial testing and
+ * evaluation purposes only.
+ *
+ * Facebook reserves all rights not expressly granted.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NON INFRINGEMENT. IN NO EVENT SHALL
+ * FACEBOOK BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+ * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * @flow
  */
+'use strict';
 
- 'use strict';
-
-var Global = require('../utils/Global');
+var React = require('react-native');
+var {
+  ActivityIndicatorIOS,
+  ListView,
+  Platform,
+  ProgressBarAndroid,
+  StyleSheet,
+  Text,
+  View,
+} = React;
 var TimerMixin = require('react-timer-mixin');
 
-/** Stores and Actions **/
-var CreationActions = require('../actions/CreationActions');
-var moment = require('moment');
+var invariant = require('invariant');
+var dismissKeyboard = require('dismissKeyboard');
 
-var DocumentAsyncStorageMixin = require('../mixins/DocumentAsyncStorageMixin');
-var AudioAsyncStorageMixin = require('../mixins/AudioAsyncStorageMixin');
+var MovieCell = require('./MovieCell');
+var MovieScreen = require('./MovieScreen');
+var SearchBar = require('SearchBar');
 
-const FIELDS = [
-  {field: {sectionTitle: 'COMPONENTS'}},
-  {field: {fieldTitle: 'Authoring For', fieldId: 'oboAuthor'}},
-  {field: {fieldTitle: 'Product', fieldId: 'productType'}},
-  {field: {fieldTitle: 'Title', fieldId: 'title'}},
-  {field: {fieldTitle: 'Headline', fieldId: 'headline'}},
-  {field: {fieldTitle: 'Front Page Bullets', fieldId: 'frontPageBullets'}},
-  {field: {sectionTitle: 'ASSETS'}},
-  {field: {fieldTitle: 'Video', fieldId: 'video'}},
-  {field: {fieldTitle: 'Audio', fieldId: 'audio'}}
+/**
+ * This is for demo purposes only, and rate limited.
+ * In case you want to use the Rotten Tomatoes' API on a real app you should
+ * create an account at http://developer.rottentomatoes.com/
+ */
+var API_URL = 'http://api.rottentomatoes.com/api/public/v1.0/';
+var API_KEYS = [
+  '7waqfqbprs7pajbz28mqf6vz',
+  // 'y4vwv8m33hed9ety83jmv52f', Fallback api_key
 ];
 
-var bulletTemplate = `<ul>
-    <li><span class="list-prefix">Citi's Take</span><span class="list-content">:&nbsp;</span></li>
-    <li><span class="list-content">&nbsp;</span></li>
-    <li><span class="list-content">&nbsp;</span></li>
-    <li><span class="list-prefix">Implications</span><span class="list-content">:&nbsp;</span></li>
-  </ul>`;
-
-
-var emptyDoc = {
-  meta: FIELDS,
-  oboAuthor: 'Unselected',
-  productType: 'Unselected',
-  title: {
-    displayTitle: '',
-    content: ''
-  },
-  headline: {
-    displayTitle: '',
-    content: ''
-  },
-  frontPageBullets: {
-    displayTitle: '',
-    content: bulletTemplate
-  },
-  audio: {},
-  video: {},
-  type: '',
-  status: 'Draft',
-  index: '',
-  updateTime: '',
+// Results should be cached keyed by the query
+// with values of null meaning "being fetched"
+// and anything besides null and undefined
+// as the result of a valid query
+var resultsCache = {
+  dataForQuery: {},
+  nextPageNumberForQuery: {},
+  totalForQuery: {},
 };
 
-module.exports = Reflux.createStore({
-  listenables: [CreationActions],
-  mixins: [
-    TimerMixin,
-    DocumentAsyncStorageMixin,
-    AudioAsyncStorageMixin
-  ],
+var LOADING = {};
 
-  init() {
-    this.data = {
-      ongoingDocument: {},
-      docList: [],
-      selectedAudio: {},
+var SearchScreen = React.createClass({
+  mixins: [TimerMixin],
+
+  timeoutID: (null: any),
+
+  getInitialState: function() {
+    return {
+      isLoading: false,
+      isLoadingTail: false,
+      dataSource: new ListView.DataSource({
+        rowHasChanged: (row1, row2) => row1 !== row2,
+      }),
+      filter: '',
+      queryNumber: 0,
     };
-    this.initOngoingDoc();
   },
 
-  initOngoingDoc() {
-    this.data.ongoingDocument = _.cloneDeep(emptyDoc);
-    this.data.ongoingDocument.id = Global.guid();
+  componentDidMount: function() {
+    this.searchMovies('');
   },
 
-  onRestoreDocList() {
-    this.restoreDocListFromStorage().then(docList => {
-      this.data.docList = docList;
-      this.trigger(this.data);
-    });
-  },
-
-  onSelectOboAuthor(oboAuthor) {
-    this.data.ongoingDocument.oboAuthor = oboAuthor;
-    this.trigger(this.data);
-  },
-
-  onSelectProfile(id) {
-    switch(id) {
-      case '1':
-        this.data.ongoingDocument.productType = 'Company Alert';
-        this.data.ongoingDocument.title = {
-          displayTitle: 'test',
-          content: '<p>test</p>'
-        };
-        break;
-      case '2':
-        this.data.ongoingDocument.productType = 'Industry Alert';
-        this.data.ongoingDocument.title = {
-          displayTitle: '456',
-          content: '<p>456</p>'
-        };
-        break;
-      case '3':
-        this.data.ongoingDocument.productType = 'Company Results';
-        this.data.ongoingDocument.title = {
-          displayTitle: '123xyz',
-          content: '<p>123xyz</p>'
-        };
-        break;
+  _urlForQueryAndPage: function(query: string, pageNumber: number): string {
+    var apiKey = API_KEYS[this.state.queryNumber % API_KEYS.length];
+    if (query) {
+      return (
+        API_URL + 'movies.json?apikey=' + apiKey + '&q=' +
+        encodeURIComponent(query) + '&page_limit=20&page=' + pageNumber
+      );
+    } else {
+      // With no query, load latest movies
+      return (
+        API_URL + 'lists/movies/in_theaters.json?apikey=' + apiKey +
+        '&page_limit=20&page=' + pageNumber
+      );
     }
-    this.trigger(this.data);
   },
 
-  onSelectProductType(productType) {
-    this.data.ongoingDocument.productType = productType;
-    this.trigger(this.data);
-  },
+  searchMovies: function(query: string) {
+    this.timeoutID = null;
 
-  onSaveEditorInput(fieldId, title, editorInput) {
-    this.data.ongoingDocument[fieldId] = {
-      displayTitle: title,
-      content: editorInput
-    };
-    this.trigger(this.data);
-  },
+    this.setState({filter: query});
 
-  onSaveDocument(ongoingDocument) {
-    this.saveDocumentToStorage(ongoingDocument).then(() => {
-      return this.addToReferencedList(ongoingDocument);
-    }).then(() => {
-      let date = moment().format('L');
-      this.data.ongoingDocument.updateTime = date;
-      let foundIndex = _.findIndex(this.data.docList, {id: ongoingDocument.id});
-      if(foundIndex < 0){
-        this.data.docList.push(this.data.ongoingDocument);
-      }else{
-        this.data.docList[foundIndex] = this.data.ongoingDocument;
+    var cachedResultsForQuery = resultsCache.dataForQuery[query];
+    if (cachedResultsForQuery) {
+      if (!LOADING[query]) {
+        this.setState({
+          dataSource: this.getDataSource(cachedResultsForQuery),
+          isLoading: false
+        });
+      } else {
+        this.setState({isLoading: true});
       }
-      this.initOngoingDoc();
-      this.trigger(this.data);
+      return;
+    }
+
+    LOADING[query] = true;
+    resultsCache.dataForQuery[query] = null;
+    this.setState({
+      isLoading: true,
+      queryNumber: this.state.queryNumber + 1,
+      isLoadingTail: false,
     });
+
+    fetch(this._urlForQueryAndPage(query, 1))
+      .then((response) => response.json())
+      .catch((error) => {
+        LOADING[query] = false;
+        resultsCache.dataForQuery[query] = undefined;
+
+        this.setState({
+          dataSource: this.getDataSource([]),
+          isLoading: false,
+        });
+      })
+      .then((responseData) => {
+        LOADING[query] = false;
+        resultsCache.totalForQuery[query] = responseData.total;
+        resultsCache.dataForQuery[query] = responseData.movies;
+        resultsCache.nextPageNumberForQuery[query] = 2;
+
+        if (this.state.filter !== query) {
+          // do not update state if the query is stale
+          return;
+        }
+
+        this.setState({
+          isLoading: false,
+          dataSource: this.getDataSource(responseData.movies),
+        });
+      })
+      .done();
   },
 
-  onExitEditDoc() {
-    this.initOngoingDoc();
-    this.trigger(this.data);
+  hasMore: function(): boolean {
+    var query = this.state.filter;
+    if (!resultsCache.dataForQuery[query]) {
+      return true;
+    }
+    return (
+      resultsCache.totalForQuery[query] !==
+      resultsCache.dataForQuery[query].length
+    );
   },
 
-  onSelectDocument(docId) {
-    var selectedDoc = _.findWhere(this.data.docList, {id: docId});
-    this.data.ongoingDocument = _.clone(selectedDoc);
-    this.trigger(this.data);
-  },
+  onEndReached: function() {
+    var query = this.state.filter;
+    if (!this.hasMore() || this.state.isLoadingTail) {
+      // We're already fetching or have all the elements so noop
+      return;
+    }
 
-  onDeleteDocument(docId) {
-    this.deleteDocumentFromStorage(docId).then(audioId => {
-      return this.removeFromReferencedList(audioId, docId);
-    }).then(() => {
-      this.data.docList = _.remove(this.data.docList, item => item.id !== docId);
-      this.trigger(this.data);
+    if (LOADING[query]) {
+      return;
+    }
+
+    LOADING[query] = true;
+    this.setState({
+      queryNumber: this.state.queryNumber + 1,
+      isLoadingTail: true,
     });
+
+    var page = resultsCache.nextPageNumberForQuery[query];
+    invariant(page != null, 'Next page number for "%s" is missing', query);
+    fetch(this._urlForQueryAndPage(query, page))
+      .then((response) => response.json())
+      .catch((error) => {
+        console.error(error);
+        LOADING[query] = false;
+        this.setState({
+          isLoadingTail: false,
+        });
+      })
+      .then((responseData) => {
+        var moviesForQuery = resultsCache.dataForQuery[query].slice();
+
+        LOADING[query] = false;
+        // We reached the end of the list before the expected number of results
+        if (!responseData.movies) {
+          resultsCache.totalForQuery[query] = moviesForQuery.length;
+        } else {
+          for (var i in responseData.movies) {
+            moviesForQuery.push(responseData.movies[i]);
+          }
+          resultsCache.dataForQuery[query] = moviesForQuery;
+          resultsCache.nextPageNumberForQuery[query] += 1;
+        }
+
+        if (this.state.filter !== query) {
+          // do not update state if the query is stale
+          return;
+        }
+
+        this.setState({
+          isLoadingTail: false,
+          dataSource: this.getDataSource(resultsCache.dataForQuery[query]),
+        });
+      })
+      .done();
   },
 
-  onSubmitDocument(docId) {
-    this.changeToSubmitStatusFromStorage(docId).then(audioId => {
-      return this.removeFromReferencedList(audioId, docId);
-    }).then(() => {
-      let selectedDoc = _.findWhere(this.data.docList, {id: docId});
-      selectedDoc.status = 'Submitted';
-      this.trigger(this.data);
-      CreationActions.submitDocument.completed();
-    });
+  getDataSource: function(movies: Array<any>): ListView.DataSource {
+    return this.state.dataSource.cloneWithRows(movies);
   },
 
-  onSaveVideo(video){
-    this.data.ongoingDocument.video = video;
-    this.trigger(this.data);
+  selectMovie: function(movie: Object) {
+    if (Platform.OS === 'ios') {
+      this.props.navigator.push({
+        title: movie.title,
+        component: MovieScreen,
+        passProps: {movie},
+      });
+    } else {
+      dismissKeyboard();
+      this.props.navigator.push({
+        title: movie.title,
+        name: 'movie',
+        movie: movie,
+      });
+    }
   },
 
-  onAddAudioToDocument(audio) {
-    this.data.ongoingDocument.audio = audio;
-    this.trigger(this.data);
+  onSearchChange: function(event: Object) {
+    var filter = event.nativeEvent.text.toLowerCase();
+
+    this.clearTimeout(this.timeoutID);
+    this.timeoutID = this.setTimeout(() => this.searchMovies(filter), 100);
+  },
+
+  renderFooter: function() {
+    if (!this.hasMore() || !this.state.isLoadingTail) {
+      return <View style={styles.scrollSpinner} />;
+    }
+    if (Platform.OS === 'ios') {
+      return <ActivityIndicatorIOS style={styles.scrollSpinner} />;
+    } else {
+      return (
+        <View  style={{alignItems: 'center'}}>
+          <ProgressBarAndroid styleAttr="Large"/>
+        </View>
+      );
+    }
+  },
+
+  renderSeparator: function(
+    sectionID: number | string,
+    rowID: number | string,
+    adjacentRowHighlighted: boolean
+  ) {
+    var style = styles.rowSeparator;
+    if (adjacentRowHighlighted) {
+        style = [style, styles.rowSeparatorHide];
+    }
+    return (
+      <View key={'SEP_' + sectionID + '_' + rowID}  style={style}/>
+    );
+  },
+
+  renderRow: function(
+    movie: Object,
+    sectionID: number | string,
+    rowID: number | string,
+    highlightRowFunc: (sectionID: ?number | string, rowID: ?number | string) => void,
+  ) {
+    return (
+      <MovieCell
+        key={movie.id}
+        onSelect={() => this.selectMovie(movie)}
+        onHighlight={() => highlightRowFunc(sectionID, rowID)}
+        onUnhighlight={() => highlightRowFunc(null, null)}
+        movie={movie}
+      />
+    );
+  },
+
+  render: function() {
+    var content = this.state.dataSource.getRowCount() === 0 ?
+      <NoMovies
+        filter={this.state.filter}
+        isLoading={this.state.isLoading}
+      /> :
+      <ListView
+        ref="listview"
+        renderSeparator={this.renderSeparator}
+        dataSource={this.state.dataSource}
+        renderFooter={this.renderFooter}
+        renderRow={this.renderRow}
+        onEndReached={this.onEndReached}
+        automaticallyAdjustContentInsets={false}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps={true}
+        showsVerticalScrollIndicator={false}
+      />;
+
+    return (
+      <View style={styles.container}>
+        <SearchBar
+          onSearchChange={this.onSearchChange}
+          isLoading={this.state.isLoading}
+          onFocus={() =>
+            this.refs.listview && this.refs.listview.getScrollResponder().scrollTo(0, 0)}
+        />
+        <View style={styles.separator} />
+        {content}
+      </View>
+    );
+  },
+});
+
+var NoMovies = React.createClass({
+  render: function() {
+    var text = '';
+    if (this.props.filter) {
+      text = `No results for "${this.props.filter}"`;
+    } else if (!this.props.isLoading) {
+      // If we're looking at the latest movies, aren't currently loading, and
+      // still have no results, show a message
+      text = 'No movies found';
+    }
+
+    return (
+      <View style={[styles.container, styles.centerText]}>
+        <Text style={styles.noMoviesText}>{text}</Text>
+      </View>
+    );
   }
 });
+
+var styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'white',
+  },
+  centerText: {
+    alignItems: 'center',
+  },
+  noMoviesText: {
+    marginTop: 80,
+    color: '#888888',
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#eeeeee',
+  },
+  scrollSpinner: {
+    marginVertical: 20,
+  },
+  rowSeparator: {
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    height: 1,
+    marginLeft: 4,
+  },
+  rowSeparatorHide: {
+    opacity: 0.0,
+  },
+});
+
+module.exports = SearchScreen;
+Status API Training Shop Blog About Pricing
+© 2016 GitHub, Inc. Terms Privacy Security Contact Help
