@@ -1,19 +1,4 @@
-Skip to content
-This repository  
-Search
-Pull requests
-Issues
-Gist
- @zhanglidora
- Watch 1,887
-  Star 26,733
- Fork 4,784 facebook/react-native
- Code  Issues 888  Pull requests 176  Wiki  Pulse  Graphs
-Branch: master Find file Copy pathreact-native/Examples/Movies/SearchScreen.js
-8fb9cc8  on Oct 16, 2015
-@billglover billglover Fix 16 linter warnings in Examples/
-15 contributors @vjeux @tadeuzagallo @gabelevi @nicklockwood @mkonicek @ide @christopherdro @sahrens @changgengli @brentvatne @billglover @bhosmer @spicyj @andreicoman11 @amasad
-RawBlameHistory     377 lines (336 sloc)  9.8 KB
+
 /**
  * The examples provided by Facebook are for non-commercial testing and
  * evaluation purposes only.
